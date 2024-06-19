@@ -9,6 +9,11 @@ import psutil
 import matplotlib.pyplot as plt
 from datetime import datetime
 
+## LSTM imports:
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, LSTM, Embedding
+from tensorflow.keras.utils import to_categorical
+
 # Step 1: Load and Prepare the Wine Quality Dataset
 # -----------------------------------------------
 # Load the dataset
@@ -104,7 +109,7 @@ ax1.set_ylabel('Training Time (s)', color='g')
 ax2.set_ylabel('Memory Usage (bytes)', color='b')
 
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-resource_usage_plot_file = f"resource_usage_{timestamp}.png"
+resource_usage_plot_file = f"pictures/resource_usage_{timestamp}.png"
 plt.savefig(resource_usage_plot_file)
 # plt.show()
 
@@ -146,7 +151,7 @@ plt.title('Model Performance Comparison')
 
 # Save the plot with a timestamp
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-performance_plot_file = f"performance_{timestamp}.png"
+performance_plot_file = f"pictures/performance_{timestamp}.png"
 plt.savefig(performance_plot_file)
 # plt.show()
 
@@ -156,18 +161,32 @@ print(f"Performance plot saved as {performance_plot_file}")
 ## Create confusion matrix for the Models
 
 
-# Sample data for test loss and accuracy
+# Assuming you have trained models and test data
+# Replace these with your actual model and test data variables
+model1 = model_single_neuron  # Your trained Single Neuron model
+model2 = model_one_layer_neuron  # Your trained One Layer NN Model
+model3 = model_normal_neuron  # Your trained Normal FFNN model
+# X_test =   # Your test feature data
+# y_test = ...  # Your test true labels
+
+# Get predictions from your models
+predictions = {
+    'Single Neuron': model1.predict(X_test).argmax(axis=1),
+    'One Layer NN Model': model2.predict(X_test).argmax(axis=1),
+    'Normal FFNN': model3.predict(X_test).argmax(axis=1)
+}
+
+# Get test loss and accuracy for each model
+loss1, acc1 = model1.evaluate(X_test, y_test, verbose=0)
+loss2, acc2 = model2.evaluate(X_test, y_test, verbose=0)
+loss3, acc3 = model3.evaluate(X_test, y_test, verbose=0)
+
 models = ['Single Neuron', 'One Layer NN Model', 'Normal FFNN']
 test_loss = [loss1, loss2, loss3]
 test_accuracy = [acc1, acc2, acc3]
 
-# Sample true labels and predictions for confusion matrices
-true_labels = np.array([0, 1, 0, 1, 0, 1, 1, 0])
-predictions = {
-    'Single Neuron': np.array([0, 1, 0, 1, 1, 0, 1, 0]),
-    'One Layer NN Model': np.array([0, 1, 0, 1, 0, 1, 1, 1]),
-    'Normal FFNN': np.array([0, 1, 0, 1, 0, 1, 1, 0])
-}
+# Determine your class labels
+class_labels = sorted(np.unique(y_test))  # Automatically get the unique classes from y_test
 
 fig, ax = plt.subplots(2, 2, figsize=(12, 10))
 
@@ -180,7 +199,7 @@ ax1.set_xlabel('Model')
 ax1.set_ylabel('Test Loss', color='tab:red')
 ax1.bar(models, test_loss, color='tab:red')
 ax1.tick_params(axis='y', labelcolor='tab:red')
-ax1_twin = ax1.twinx()  
+ax1_twin = ax1.twinx()
 ax1_twin.set_ylabel('Test Accuracy', color='tab:blue')
 ax1_twin.plot(models, test_accuracy, color='tab:blue', marker='o')
 ax1_twin.tick_params(axis='y', labelcolor='tab:blue')
@@ -188,13 +207,15 @@ ax1.set_title('Model Performance Comparison')
 
 # Confusion matrices
 for i, model in enumerate(models):
-    cm = confusion_matrix(true_labels, predictions[model])
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=[0, 1])
+    cm = confusion_matrix(y_test, predictions[model])
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=class_labels)
     disp.plot(ax=ax[i + 1], colorbar=False)
     ax[i + 1].set_title(f'{model} Confusion Matrix')
 
 plt.tight_layout()
-plt.savefig('enhanced_performance_with_confusion_matrices.png')
+plt.savefig('pictures/enhanced_performance_with_confusion_matrices.png')
+
+
 # plt.show()
 history_df = pd.DataFrame(history1.history)
 plt.clf()
@@ -205,7 +226,83 @@ plt.xlabel('Epochs')
 plt.ylabel('Loss')
 
 # Save the plot as a figure
-plt.savefig('training_loss_plot.png')
+plt.savefig('pictures/training_loss_plot.png')
 
 # Show the plot (optional, for interactive environments)
+# plt.show()
+
+
+###################### Add LSTM NN ################################
+
+# Check the maximum value in your input data to determine the vocabulary size
+vocab_size = int(np.max([np.max(X_train), np.max(X_test)])) + 1
+print(f'Vocabulary size: {vocab_size}')
+
+# Convert labels to categorical (one-hot encoding) if needed
+num_classes = len(np.unique(y_train))
+y_train_categorical = to_categorical(y_train, num_classes)
+y_test_categorical = to_categorical(y_test, num_classes)
+
+# Define and train the LSTM model
+lstm_model = Sequential()
+lstm_model.add(Embedding(input_dim=vocab_size, output_dim=128))
+lstm_model.add(LSTM(128))
+lstm_model.add(Dense(num_classes, activation='softmax'))
+
+lstm_model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+lstm_history = lstm_model.fit(X_train, y_train_categorical, epochs=10, batch_size=32, validation_split=0.2)
+
+# Get LSTM model predictions
+lstm_predictions = lstm_model.predict(X_test).argmax(axis=1)
+
+# Evaluate the LSTM model
+lstm_loss, lstm_acc = lstm_model.evaluate(X_test, y_test_categorical, verbose=0)
+
+# Adding LSTM model to the existing models for comparison
+models = ['Single Neuron', 'One Layer NN Model', 'Normal FFNN', 'LSTM NN']
+test_loss = [loss1, loss2, loss3, lstm_loss]
+test_accuracy = [acc1, acc2, acc3, lstm_acc]
+
+# Predictions dictionary now includes LSTM model predictions
+predictions['LSTM NN'] = lstm_predictions
+
+# Define your class labels
+class_labels = np.unique(y_test)  # Assuming y_test contains all possible classes
+
+fig, ax = plt.subplots(2, 3, figsize=(18, 10))  # Changed to 2x3 grid
+
+# Flattening the array of axes for easier indexing
+ax = ax.flatten()
+
+# Performance plot
+ax1 = ax[0]
+ax1.set_xlabel('Model')
+ax1.set_ylabel('Test Loss', color='tab:red')
+ax1.bar(models, test_loss, color='tab:red')
+ax1.tick_params(axis='y', labelcolor='tab:red')
+ax1_twin = ax1.twinx()
+ax1_twin.set_ylabel('Test Accuracy', color='tab:blue')
+ax1_twin.plot(models, test_accuracy, color='tab:blue', marker='o')
+ax1_twin.tick_params(axis='y', labelcolor='tab:blue')
+ax1.set_title('Model Performance Comparison')
+
+# Confusion matrices
+for i, model in enumerate(models):
+    cm = confusion_matrix(y_test, predictions[model])
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=class_labels)
+    disp.plot(ax=ax[i + 1], colorbar=False)
+    ax[i + 1].set_title(f'{model} Confusion Matrix')
+
+plt.tight_layout()
+plt.savefig('pictures/enhanced_performance_with_confusion_matrices.png')
+# plt.show()
+
+# Save the training loss plot
+history_df = pd.DataFrame(lstm_history.history)
+plt.figure()
+history_df['loss'].plot()
+plt.title('LSTM Training Loss Over Epochs')
+plt.xlabel('Epochs')
+plt.ylabel('Loss')
+plt.savefig('pictures/lstm_training_loss_plot.png')
 # plt.show()
