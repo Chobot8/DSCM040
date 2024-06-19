@@ -9,9 +9,11 @@ import psutil
 import matplotlib.pyplot as plt
 from datetime import datetime
 
-## LSTM imports:
+## GRU imports:
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+from sklearn.preprocessing import StandardScaler
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, LSTM, Embedding, Dropout, BatchNormalization
+from tensorflow.keras.layers import Dense, GRU, Embedding, Dropout, BatchNormalization
 from tensorflow.keras.utils import to_categorical
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 from tensorflow.keras.optimizers import Adam
@@ -234,7 +236,7 @@ plt.savefig('pictures/training_loss_plot.png')
 # plt.show()
 
 
-###################### Add LSTM NN ################################
+###################### Add GRU NN ################################
 
 # Check the maximum value in your input data to determine the vocabulary size
 vocab_size = int(np.max([np.max(X_train), np.max(X_test)])) + 1
@@ -250,39 +252,39 @@ num_classes = len(np.unique(y_train))
 y_train_categorical = to_categorical(y_train, num_classes)
 y_test_categorical = to_categorical(y_test, num_classes)
 
-# Define and train the LSTM model with hyperparameter tuning and regularization
-lstm_model = Sequential()
-lstm_model.add(Embedding(input_dim=vocab_size, output_dim=128))
-lstm_model.add(LSTM(128, return_sequences=True))
-lstm_model.add(Dropout(0.5))
-lstm_model.add(BatchNormalization())
-lstm_model.add(LSTM(64))
-lstm_model.add(Dropout(0.5))
-lstm_model.add(BatchNormalization())
-lstm_model.add(Dense(num_classes, activation='softmax'))
+# Define and train the GRU model
+gru_model = Sequential()
+gru_model.add(Embedding(input_dim=vocab_size, output_dim=128))
+gru_model.add(GRU(128, return_sequences=True))
+gru_model.add(Dropout(0.5))
+gru_model.add(BatchNormalization())
+gru_model.add(GRU(64))
+gru_model.add(Dropout(0.5))
+gru_model.add(BatchNormalization())
+gru_model.add(Dense(num_classes, activation='softmax'))
 
 optimizer = Adam(learning_rate=0.001)
-lstm_model.compile(optimizer=optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
+gru_model.compile(optimizer=optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
 
 # Callbacks for early stopping and learning rate reduction
 early_stopping = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
 reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=3, min_lr=0.0001)
 
-lstm_history = lstm_model.fit(X_train_scaled, y_train_categorical, epochs=50, batch_size=64, validation_split=0.2, callbacks=[early_stopping, reduce_lr])
+gru_history = gru_model.fit(X_train_scaled, y_train_categorical, epochs=50, batch_size=64, validation_split=0.2, callbacks=[early_stopping, reduce_lr])
 
-# Get LSTM model predictions
-lstm_predictions = lstm_model.predict(X_test_scaled).argmax(axis=1)
+# Get GRU model predictions
+gru_predictions = gru_model.predict(X_test_scaled).argmax(axis=1)
 
-# Evaluate the LSTM model
-lstm_loss, lstm_acc = lstm_model.evaluate(X_test_scaled, y_test_categorical, verbose=0)
+# Evaluate the GRU model
+gru_loss, gru_acc = gru_model.evaluate(X_test_scaled, y_test_categorical, verbose=0)
 
-# Adding LSTM model to the existing models for comparison
-models = ['Single Neuron', 'One Layer NN Model', 'Normal FFNN', 'LSTM NN']
-test_loss = [loss1, loss2, loss3, lstm_loss]
-test_accuracy = [acc1, acc2, acc3, lstm_acc]
+# Adding GRU model to the existing models for comparison
+models = ['Single Neuron', 'One Layer NN Model', 'Normal FFNN', 'GRU NN']
+test_loss = [loss1, loss2, loss3, gru_loss]
+test_accuracy = [acc1, acc2, acc3, gru_acc]
 
-# Predictions dictionary now includes LSTM model predictions
-predictions['LSTM NN'] = lstm_predictions
+# Predictions dictionary now includes GRU model predictions
+predictions['GRU NN'] = gru_predictions
 
 # Define your class labels
 class_labels = np.unique(y_test)  # Assuming y_test contains all possible classes
@@ -316,11 +318,11 @@ plt.savefig('pictures/enhanced_performance_with_confusion_matrices.png')
 # plt.show()
 
 # Save the training loss plot
-history_df = pd.DataFrame(lstm_history.history)
+history_df = pd.DataFrame(gru_history.history)
 plt.figure()
 history_df['loss'].plot()
-plt.title('LSTM Training Loss Over Epochs')
+plt.title('GRU Training Loss Over Epochs')
 plt.xlabel('Epochs')
 plt.ylabel('Loss')
-plt.savefig('pictures/lstm_training_loss_plot.png')
+plt.savefig('pictures/gru_training_loss_plot.png')
 # plt.show()
