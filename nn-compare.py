@@ -9,14 +9,19 @@ import psutil
 import matplotlib.pyplot as plt
 from datetime import datetime
 
-## GRU imports:
+## Transformar model imports:
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 from sklearn.preprocessing import StandardScaler
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, GRU, Embedding, Dropout, BatchNormalization
+from tensorflow.keras.layers import Dense, Dropout, BatchNormalization, Embedding, Input, Flatten, Conv1D, GlobalAveragePooling1D, LayerNormalization, MultiHeadAttention
 from tensorflow.keras.utils import to_categorical
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 from tensorflow.keras.optimizers import Adam
+from tensorflow.keras import layers
+import tensorflow as tf
+
+## XGBoost
+import xgboost as xgb
 
 # Step 1: Load and Prepare the Wine Quality Dataset
 # -----------------------------------------------
@@ -236,7 +241,7 @@ plt.savefig('pictures/training_loss_plot.png')
 # plt.show()
 
 
-###################### Add GRU NN ################################
+###################### Add Transformal model NN ################################
 
 # Check the maximum value in your input data to determine the vocabulary size
 vocab_size = int(np.max([np.max(X_train), np.max(X_test)])) + 1
@@ -247,44 +252,88 @@ scaler = StandardScaler()
 X_train_scaled = scaler.fit_transform(X_train)
 X_test_scaled = scaler.transform(X_test)
 
+# Reshape the data to be compatible with Conv1D and Transformer layers
+X_train_scaled = X_train_scaled.reshape(X_train_scaled.shape[0], X_train_scaled.shape[1], 1)
+X_test_scaled = X_test_scaled.reshape(X_test_scaled.shape[0], X_test_scaled.shape[1], 1)
+
 # Convert labels to categorical (one-hot encoding) if needed
 num_classes = len(np.unique(y_train))
 y_train_categorical = to_categorical(y_train, num_classes)
 y_test_categorical = to_categorical(y_test, num_classes)
 
-# Define and train the GRU model
-gru_model = Sequential()
-gru_model.add(Embedding(input_dim=vocab_size, output_dim=128))
-gru_model.add(GRU(128, return_sequences=True))
-gru_model.add(Dropout(0.5))
-gru_model.add(BatchNormalization())
-gru_model.add(GRU(64))
-gru_model.add(Dropout(0.5))
-gru_model.add(BatchNormalization())
-gru_model.add(Dense(num_classes, activation='softmax'))
+# Define a Transformer model
+def transformer_encoder(inputs, head_size, num_heads, ff_dim, dropout=0):
+    # Normalization and Attention
+    x = LayerNormalization(epsilon=1e-6)(inputs)
+    x = MultiHeadAttention(
+        key_dim=head_size, num_heads=num_heads, dropout=dropout
+    )(x, x)
+    x = Dropout(dropout)(x)
+    res = x + inputs
 
-optimizer = Adam(learning_rate=0.001)
-gru_model.compile(optimizer=optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
+    # Feed Forward Part
+    x = LayerNormalization(epsilon=1e-6)(res)
+    x = Conv1D(filters=ff_dim, kernel_size=1, activation="relu")(x)
+    x = Dropout(dropout)(x)
+    x = Conv1D(filters=inputs.shape[-1], kernel_size=1)(x)
+    return x + res
 
-# Callbacks for early stopping and learning rate reduction
+def build_model(input_shape, head_size, num_heads, ff_dim, num_blocks, num_classes, dropout=0, mlp_units=[], mlp_dropout=0):
+    inputs = Input(shape=input_shape)
+    x = inputs
+    for _ in range(num_blocks):
+        x = transformer_encoder(x, head_size, num_heads, ff_dim, dropout)
+
+    x = GlobalAveragePooling1D(data_format="channels_first")(x)
+    for dim in mlp_units:
+        x = Dense(dim, activation="relu")(x)
+        x = Dropout(mlp_dropout)(x)
+    outputs = Dense(num_classes, activation="softmax")(x)
+    return tf.keras.Model(inputs, outputs)
+
+input_shape = X_train_scaled.shape[1:]
+model = build_model(
+    input_shape,
+    head_size=256,
+    num_heads=4,
+    ff_dim=4,
+    num_blocks=4,
+    num_classes=num_classes,
+    dropout=0.25,
+    mlp_units=[128],
+    mlp_dropout=0.4,
+)
+
+model.compile(
+    loss="categorical_crossentropy",
+    optimizer=Adam(learning_rate=1e-4),
+    metrics=["accuracy"],
+)
+
 early_stopping = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
 reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=3, min_lr=0.0001)
 
-gru_history = gru_model.fit(X_train_scaled, y_train_categorical, epochs=50, batch_size=64, validation_split=0.2, callbacks=[early_stopping, reduce_lr])
+history = model.fit(
+    X_train_scaled, y_train_categorical, 
+    validation_split=0.2,
+    epochs=50,
+    batch_size=64,
+    callbacks=[early_stopping, reduce_lr]
+)
 
-# Get GRU model predictions
-gru_predictions = gru_model.predict(X_test_scaled).argmax(axis=1)
+# Get model predictions
+predictions_transformer = model.predict(X_test_scaled).argmax(axis=1)
 
-# Evaluate the GRU model
-gru_loss, gru_acc = gru_model.evaluate(X_test_scaled, y_test_categorical, verbose=0)
+# Evaluate the model
+loss_transformer, acc_transformer = model.evaluate(X_test_scaled, y_test_categorical, verbose=0)
 
-# Adding GRU model to the existing models for comparison
-models = ['Single Neuron', 'One Layer NN Model', 'Normal FFNN', 'GRU NN']
-test_loss = [loss1, loss2, loss3, gru_loss]
-test_accuracy = [acc1, acc2, acc3, gru_acc]
+# Adding Transformer model to the existing models for comparison
+models = ['Single Neuron', 'One Layer NN Model', 'Normal FFNN', 'Transformer NN']
+test_loss = [loss1, loss2, loss3, loss_transformer]
+test_accuracy = [acc1, acc2, acc3, acc_transformer]
 
-# Predictions dictionary now includes GRU model predictions
-predictions['GRU NN'] = gru_predictions
+# Predictions dictionary now includes Transformer model predictions
+predictions['Transformer NN'] = predictions_transformer
 
 # Define your class labels
 class_labels = np.unique(y_test)  # Assuming y_test contains all possible classes
@@ -304,6 +353,7 @@ ax1_twin = ax1.twinx()
 ax1_twin.set_ylabel('Test Accuracy', color='tab:blue')
 ax1_twin.plot(models, test_accuracy, color='tab:blue', marker='o')
 ax1_twin.tick_params(axis='y', labelcolor='tab:blue')
+ax1_twin.set_ylim(0.4, 0.8)  # Ensure the y-axis shows the full range of accuracy
 ax1.set_title('Model Performance Comparison')
 
 # Confusion matrices
@@ -318,11 +368,11 @@ plt.savefig('pictures/enhanced_performance_with_confusion_matrices.png')
 # plt.show()
 
 # Save the training loss plot
-history_df = pd.DataFrame(gru_history.history)
+history_df = pd.DataFrame(history.history)
 plt.figure()
 history_df['loss'].plot()
-plt.title('GRU Training Loss Over Epochs')
+plt.title('Transformer Training Loss Over Epochs')
 plt.xlabel('Epochs')
 plt.ylabel('Loss')
-plt.savefig('pictures/gru_training_loss_plot.png')
+plt.savefig('pictures/transformer_training_loss_plot.png')
 # plt.show()
