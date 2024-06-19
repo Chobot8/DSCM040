@@ -11,8 +11,10 @@ from datetime import datetime
 
 ## LSTM imports:
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, LSTM, Embedding
+from tensorflow.keras.layers import Dense, LSTM, Embedding, Dropout, BatchNormalization
 from tensorflow.keras.utils import to_categorical
+from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
+from tensorflow.keras.optimizers import Adam
 
 # Step 1: Load and Prepare the Wine Quality Dataset
 # -----------------------------------------------
@@ -238,25 +240,41 @@ plt.savefig('pictures/training_loss_plot.png')
 vocab_size = int(np.max([np.max(X_train), np.max(X_test)])) + 1
 print(f'Vocabulary size: {vocab_size}')
 
+# Standardize the data
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
 # Convert labels to categorical (one-hot encoding) if needed
 num_classes = len(np.unique(y_train))
 y_train_categorical = to_categorical(y_train, num_classes)
 y_test_categorical = to_categorical(y_test, num_classes)
 
-# Define and train the LSTM model
+# Define and train the LSTM model with hyperparameter tuning and regularization
 lstm_model = Sequential()
 lstm_model.add(Embedding(input_dim=vocab_size, output_dim=128))
-lstm_model.add(LSTM(128))
+lstm_model.add(LSTM(128, return_sequences=True))
+lstm_model.add(Dropout(0.5))
+lstm_model.add(BatchNormalization())
+lstm_model.add(LSTM(64))
+lstm_model.add(Dropout(0.5))
+lstm_model.add(BatchNormalization())
 lstm_model.add(Dense(num_classes, activation='softmax'))
 
-lstm_model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
-lstm_history = lstm_model.fit(X_train, y_train_categorical, epochs=10, batch_size=32, validation_split=0.2)
+optimizer = Adam(learning_rate=0.001)
+lstm_model.compile(optimizer=optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
+
+# Callbacks for early stopping and learning rate reduction
+early_stopping = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
+reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=3, min_lr=0.0001)
+
+lstm_history = lstm_model.fit(X_train_scaled, y_train_categorical, epochs=50, batch_size=64, validation_split=0.2, callbacks=[early_stopping, reduce_lr])
 
 # Get LSTM model predictions
-lstm_predictions = lstm_model.predict(X_test).argmax(axis=1)
+lstm_predictions = lstm_model.predict(X_test_scaled).argmax(axis=1)
 
 # Evaluate the LSTM model
-lstm_loss, lstm_acc = lstm_model.evaluate(X_test, y_test_categorical, verbose=0)
+lstm_loss, lstm_acc = lstm_model.evaluate(X_test_scaled, y_test_categorical, verbose=0)
 
 # Adding LSTM model to the existing models for comparison
 models = ['Single Neuron', 'One Layer NN Model', 'Normal FFNN', 'LSTM NN']
