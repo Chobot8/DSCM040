@@ -1,0 +1,2 @@
+Training time (CNN): 1023.07 seconds
+Test accuracy (CNN): 80.83%

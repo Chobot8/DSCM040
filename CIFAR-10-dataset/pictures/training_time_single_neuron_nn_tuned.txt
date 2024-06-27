@@ -1,0 +1,7 @@
+Training time (Single Neuron NN with Hyperparameter Tuning): 36.77 seconds
+Test accuracy (Single Neuron NN with Hyperparameter Tuning): 18.14%
+
+
+### NOTE Total time for training 5.45 minutes
+
+# as we can see single neuron for classification of 10 classes is practically unusable. but fast and cheap on computation

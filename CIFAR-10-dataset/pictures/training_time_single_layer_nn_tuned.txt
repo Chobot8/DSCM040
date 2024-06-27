@@ -1,0 +1,5 @@
+Training time (Single-layer NN with Hyperparameter Tuning): 257.60 seconds
+Test accuracy (Single-layer NN with Hyperparameter Tuning): 53.38%
+
+## With hyper tuning we get closer to decent results. But not exceptional.
+## NOTE over all time 1h and 10 minutes!!!

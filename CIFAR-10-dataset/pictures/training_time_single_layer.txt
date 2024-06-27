@@ -1,0 +1,5 @@
+Training time (Single-layer NN): 25.50 seconds
+Test accuracy (Single-layer NN): 22.13%
+
+
+#### WIth out fine tuning this is still unusable
