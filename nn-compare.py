@@ -3,7 +3,7 @@ import numpy as np
 import tensorflow as tf
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay, accuracy_score
 import time
 import psutil
 import matplotlib.pyplot as plt
@@ -243,23 +243,62 @@ plt.savefig('pictures/training_loss_plot.png')
 
 ###################### Add Transformal model NN ################################
 
-# Check the maximum value in your input data to determine the vocabulary size
-vocab_size = int(np.max([np.max(X_train), np.max(X_test)])) + 1
-print(f'Vocabulary size: {vocab_size}')
-
 # Standardize the data
 scaler = StandardScaler()
 X_train_scaled = scaler.fit_transform(X_train)
 X_test_scaled = scaler.transform(X_test)
 
-# Reshape the data to be compatible with Conv1D and Transformer layers
-X_train_scaled = X_train_scaled.reshape(X_train_scaled.shape[0], X_train_scaled.shape[1], 1)
-X_test_scaled = X_test_scaled.reshape(X_test_scaled.shape[0], X_test_scaled.shape[1], 1)
-
 # Convert labels to categorical (one-hot encoding) if needed
 num_classes = len(np.unique(y_train))
 y_train_categorical = to_categorical(y_train, num_classes)
 y_test_categorical = to_categorical(y_test, num_classes)
+
+# Define the Single Neuron model
+single_neuron_model = Sequential()
+single_neuron_model.add(Dense(num_classes, input_dim=X_train_scaled.shape[1], activation='softmax'))
+
+single_neuron_model.compile(optimizer=Adam(learning_rate=0.001), loss='categorical_crossentropy', metrics=['accuracy'])
+
+early_stopping = EarlyStopping(monitor='val_loss', patience=3, restore_best_weights=True)
+
+single_neuron_history = single_neuron_model.fit(X_train_scaled, y_train_categorical, epochs=50, batch_size=32, validation_split=0.2, callbacks=[early_stopping])
+
+# Get Single Neuron model predictions
+predictions_single_neuron = single_neuron_model.predict(X_test_scaled).argmax(axis=1)
+
+# Evaluate the Single Neuron model
+loss_single_neuron, acc_single_neuron = single_neuron_model.evaluate(X_test_scaled, y_test_categorical, verbose=0)
+
+# Define and train the One Layer NN model
+one_layer_nn_model = Sequential()
+one_layer_nn_model.add(Dense(64, input_dim=X_train_scaled.shape[1], activation='relu'))
+one_layer_nn_model.add(Dense(num_classes, activation='softmax'))
+
+one_layer_nn_model.compile(optimizer=Adam(learning_rate=0.001), loss='categorical_crossentropy', metrics=['accuracy'])
+
+one_layer_nn_history = one_layer_nn_model.fit(X_train_scaled, y_train_categorical, epochs=50, batch_size=32, validation_split=0.2, callbacks=[early_stopping])
+
+# Get One Layer NN model predictions
+predictions_one_layer_nn = one_layer_nn_model.predict(X_test_scaled).argmax(axis=1)
+
+# Evaluate the One Layer NN model
+loss_one_layer_nn, acc_one_layer_nn = one_layer_nn_model.evaluate(X_test_scaled, y_test_categorical, verbose=0)
+
+# Define and train the Normal FFNN model
+normal_ffnn_model = Sequential()
+normal_ffnn_model.add(Dense(128, input_dim=X_train_scaled.shape[1], activation='relu'))
+normal_ffnn_model.add(Dense(64, activation='relu'))
+normal_ffnn_model.add(Dense(num_classes, activation='softmax'))
+
+normal_ffnn_model.compile(optimizer=Adam(learning_rate=0.001), loss='categorical_crossentropy', metrics=['accuracy'])
+
+normal_ffnn_history = normal_ffnn_model.fit(X_train_scaled, y_train_categorical, epochs=50, batch_size=32, validation_split=0.2, callbacks=[early_stopping])
+
+# Get Normal FFNN model predictions
+predictions_ffnn = normal_ffnn_model.predict(X_test_scaled).argmax(axis=1)
+
+# Evaluate the Normal FFNN model
+loss_ffnn, acc_ffnn = normal_ffnn_model.evaluate(X_test_scaled, y_test_categorical, verbose=0)
 
 # Define a Transformer model
 def transformer_encoder(inputs, head_size, num_heads, ff_dim, dropout=0):
@@ -291,8 +330,12 @@ def build_model(input_shape, head_size, num_heads, ff_dim, num_blocks, num_class
     outputs = Dense(num_classes, activation="softmax")(x)
     return tf.keras.Model(inputs, outputs)
 
-input_shape = X_train_scaled.shape[1:]
-model = build_model(
+# Reshape the data to be compatible with Conv1D and Transformer layers
+X_train_scaled_cnn = X_train_scaled.reshape(X_train_scaled.shape[0], X_train_scaled.shape[1], 1)
+X_test_scaled_cnn = X_test_scaled.reshape(X_test_scaled.shape[0], X_test_scaled.shape[1], 1)
+
+input_shape = X_train_scaled_cnn.shape[1:]
+transformer_model = build_model(
     input_shape,
     head_size=256,
     num_heads=4,
@@ -304,7 +347,7 @@ model = build_model(
     mlp_dropout=0.4,
 )
 
-model.compile(
+transformer_model.compile(
     loss="categorical_crossentropy",
     optimizer=Adam(learning_rate=1e-4),
     metrics=["accuracy"],
@@ -313,27 +356,44 @@ model.compile(
 early_stopping = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
 reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=3, min_lr=0.0001)
 
-history = model.fit(
-    X_train_scaled, y_train_categorical, 
+transformer_history = transformer_model.fit(
+    X_train_scaled_cnn, y_train_categorical, 
     validation_split=0.2,
     epochs=50,
     batch_size=64,
     callbacks=[early_stopping, reduce_lr]
 )
 
-# Get model predictions
-predictions_transformer = model.predict(X_test_scaled).argmax(axis=1)
+# Get Transformer model predictions
+predictions_transformer = transformer_model.predict(X_test_scaled_cnn).argmax(axis=1)
 
-# Evaluate the model
-loss_transformer, acc_transformer = model.evaluate(X_test_scaled, y_test_categorical, verbose=0)
+# Evaluate the Transformer model
+loss_transformer, acc_transformer = transformer_model.evaluate(X_test_scaled_cnn, y_test_categorical, verbose=0)
 
-# Adding Transformer model to the existing models for comparison
-models = ['Single Neuron', 'One Layer NN Model', 'Normal FFNN', 'Transformer NN']
-test_loss = [loss1, loss2, loss3, loss_transformer]
-test_accuracy = [acc1, acc2, acc3, acc_transformer]
+# Define and train an XGBoost model
+xgb_model = xgb.XGBClassifier(objective='multi:softmax', num_class=num_classes, eval_metric='mlogloss')
+xgb_model.fit(X_train_scaled, y_train)
 
-# Predictions dictionary now includes Transformer model predictions
-predictions['Transformer NN'] = predictions_transformer
+# Get XGBoost model predictions
+predictions_xgb = xgb_model.predict(X_test_scaled)
+
+# Evaluate the XGBoost model
+acc_xgb = accuracy_score(y_test, predictions_xgb)
+loss_xgb = 1 - acc_xgb  # Using 1 - accuracy as a proxy for loss for simplicity
+
+# Adding models to the comparison
+models = ['Single Neuron', 'One Layer NN Model', 'Normal FFNN', 'Transformer NN', 'XGBoost']
+test_loss = [loss_single_neuron, loss_one_layer_nn, loss_ffnn, loss_transformer, loss_xgb]
+test_accuracy = [acc_single_neuron, acc_one_layer_nn, acc_ffnn, acc_transformer, acc_xgb]
+
+# Collect all predictions
+predictions = {
+    'Single Neuron': predictions_single_neuron,
+    'One Layer NN Model': predictions_one_layer_nn,
+    'Normal FFNN': predictions_ffnn,
+    'Transformer NN': predictions_transformer,
+    'XGBoost': predictions_xgb
+}
 
 # Define your class labels
 class_labels = np.unique(y_test)  # Assuming y_test contains all possible classes
@@ -353,7 +413,7 @@ ax1_twin = ax1.twinx()
 ax1_twin.set_ylabel('Test Accuracy', color='tab:blue')
 ax1_twin.plot(models, test_accuracy, color='tab:blue', marker='o')
 ax1_twin.tick_params(axis='y', labelcolor='tab:blue')
-ax1_twin.set_ylim(0.4, 0.8)  # Ensure the y-axis shows the full range of accuracy
+ax1_twin.set_ylim(0, 1)  # Ensure the y-axis shows the full range of accuracy
 ax1.set_title('Model Performance Comparison')
 
 # Confusion matrices
@@ -367,8 +427,8 @@ plt.tight_layout()
 plt.savefig('pictures/enhanced_performance_with_confusion_matrices.png')
 # plt.show()
 
-# Save the training loss plot
-history_df = pd.DataFrame(history.history)
+# Save the training loss plot for Transformer model
+history_df = pd.DataFrame(transformer_history.history)
 plt.figure()
 history_df['loss'].plot()
 plt.title('Transformer Training Loss Over Epochs')
